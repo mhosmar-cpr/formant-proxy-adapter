@@ -34,7 +34,7 @@ class WebSocketSession(threading.Thread):
                             websocket_queues[self.__id] = None
                             return
                         elif msg["signal"] == "message":
-                            await self.__websocket.send(msg["data"])
+                            await self.__websocket.send(json.dumps(msg["data"]))
                         else:
                             websocket_queues[self.__id] = None
                             print("unknown message")
