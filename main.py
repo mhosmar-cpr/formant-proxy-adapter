@@ -87,12 +87,13 @@ class WebSocketSession(threading.Thread):
         asyncio.run(start())
 
 class SocketioSession(threading.Thread):
-    def __init__(self, id, fclient, url, queue):
+    def __init__(self, id, fclient, url, namespace, queue):
         self.__id = id
         self.__fclient = fclient
         self.__url = url
         self.__queue = queue
         self.__sio = socketio.AsyncClient()
+        self.__namespace = namespace
         threading.Thread.__init__(self)
 
     def run(self):
@@ -105,13 +106,13 @@ class SocketioSession(threading.Thread):
                     pass
                 else:
                     if self.__sio is not None:
-                        if msg["signal"] == "close":
+                        if msg["signal"] == "disconnect":
                             print("closing socketio for " + self.__id)
                             await self.__sio.disconnect()
                             socketio_queues[self.__id] = None
                             return
                         elif msg["signal"] == "message":
-                            await self.__sio.emit(msg["topic"],json.dumps(msg["data"]))
+                            await self.__sio.emit(msg["topic"],json.dumps(msg["data"]), namespace=self.__namespace)
                         else:
                             socketio_queues[self.__id] = None
                             print("unknown message")
@@ -120,48 +121,50 @@ class SocketioSession(threading.Thread):
                 await asyncio.sleep(0)
 
         async def listen_messages():
-            print(self.__id + " connecting to socketio proxy " + str(self.__url))
-            await self.__sio.connect(self.__url)
-
-            @self.__sio.event
-            async def disconnect():
+            @self.__sio.event(namespace=self.__namespace)
+            async def connect():
                 print(self.__id + " socketio connected")
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
-                        {"id": self.__id, "proxy_type": "pio", "event": "connect"}
+                        {"id": self.__id, "proxy_type": "sio", "event": "connect"}
                     ).encode("utf-8"),
                 )
 
-            @self.__sio.on('*')
+            @self.__sio.event(namespace=self.__namespace)
+            async def disconnect():
+                print(self.__id + " socketio disconnected")
+                self.__fclient.send_on_custom_data_channel(
+                    CHANNEL_NAME,
+                    json.dumps(
+                        {"id": self.__id, "proxy_type": "sio", "event": "disconnect"}
+                    ).encode("utf-8"),
+                )
+
+            @self.__sio.on('*', namespace=self.__namespace)
             async def handle_message(event, data):
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
                         {
                             "id": self.__id,
-                            "proxy_type": "pio",
+                            "proxy_type": "sio",
                             "event": "message",
                             "topic": event,
                             "contents": data,
                         }
                     ).encode("utf-8"),
                 )
-            @self.__sio.event
-            async def disconnect():
-                self.__fclient.send_on_custom_data_channel(
-                    CHANNEL_NAME,
-                    json.dumps(
-                        {"id": self.__id, "proxy_type": "pio", "event": "disconnect"}
-                    ).encode("utf-8"),
-                )
-            websocket_queues[self.__id] = None
+            print(self.__id + " connecting to socketio proxy " + str(self.__url))
+            await self.__sio.connect(self.__url, namespaces=[self.__namespace])
 
         async def start():
-            print("starting websocket proxy for " + self.__id)
+            print("starting socketio proxy for " + self.__id)
             await asyncio.gather(forward_messages(), listen_messages())
             await self.__sio.wait()
-            print("ending websocket proxy for " + self.__id)
+            self.__sio = None
+            socketio_queues[self.__id] = None
+            print("ending socketio proxy for " + self.__id)
 
         asyncio.run(start())
 
@@ -186,11 +189,11 @@ def main():
                 q = websocket_queues[id]
                 if q is not None:
                     q.put(requestData)
-        if requestData["proxy_type"] == "pio":
+        if requestData["proxy_type"] == "sio":
             if requestData["signal"] == "connect":
                 q = queue.Queue()
                 socketio_queues[id] = q
-                SocketioSession(id, fclient, requestData["url"], q).start()
+                SocketioSession(id, fclient, requestData["url"], requestData["namespace"], q).start()
             else:
                 q = socketio_queues[id]
                 if q is not None:
