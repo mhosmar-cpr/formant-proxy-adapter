@@ -129,7 +129,7 @@ class SocketioSession(threading.Thread):
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
-                        {"id": self.__id, "proxy_type": "pio", "event": "open"}
+                        {"id": self.__id, "proxy_type": "pio", "event": "connect"}
                     ).encode("utf-8"),
                 )
 
@@ -152,7 +152,7 @@ class SocketioSession(threading.Thread):
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
-                        {"id": self.__id, "proxy_type": "pio", "event": "close"}
+                        {"id": self.__id, "proxy_type": "pio", "event": "disconnect"}
                     ).encode("utf-8"),
                 )
             websocket_queues[self.__id] = None
