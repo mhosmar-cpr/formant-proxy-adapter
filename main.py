@@ -10,6 +10,22 @@ import socketio
 websocket_queues = {}
 socketio_queues = {}
 
+
+def _decode(o):
+    # Note the "unicode" part is only for python2
+    if isinstance(o, str):
+        try:
+            return int(o)
+        except ValueError:
+            return o
+    elif isinstance(o, dict):
+        return {k: _decode(v) for k, v in o.items()}
+    elif isinstance(o, list):
+        return [_decode(v) for v in o]
+    else:
+        return o
+
+
 class WebSocketSession(threading.Thread):
     def __init__(self, id, fclient, url, queue):
         self.__id = id
@@ -50,9 +66,9 @@ class WebSocketSession(threading.Thread):
                 print(self.__id + " websocket connected")
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
-                    json.dumps(
-                        {"id": self.__id, "proxy_type": "ws", "event": "open"}
-                    ).encode("utf-8"),
+                    json.dumps({"id": self.__id, "proxy_type": "ws", "event": "open"}).encode(
+                        "utf-8"
+                    ),
                 )
                 try:
                     while True:
@@ -73,9 +89,9 @@ class WebSocketSession(threading.Thread):
                     print(self.__id + " websocket closed")
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
-                    json.dumps(
-                        {"id": self.__id, "proxy_type": "ws", "event": "close"}
-                    ).encode("utf-8"),
+                    json.dumps({"id": self.__id, "proxy_type": "ws", "event": "close"}).encode(
+                        "utf-8"
+                    ),
                 )
                 websocket_queues[self.__id] = None
 
@@ -85,6 +101,7 @@ class WebSocketSession(threading.Thread):
             print("ending websocket proxy for " + self.__id)
 
         asyncio.run(start())
+
 
 class SocketioSession(threading.Thread):
     def __init__(self, id, fclient, url, namespace, queue):
@@ -112,7 +129,11 @@ class SocketioSession(threading.Thread):
                             socketio_queues[self.__id] = None
                             return
                         elif msg["signal"] == "message":
-                            await self.__sio.emit(msg["topic"],json.dumps(msg["data"]), namespace=self.__namespace)
+                            print("Got SIO message: ")
+                            print(msg)
+                            await self.__sio.emit(
+                                msg["topic"], json.dumps(msg["data"]), namespace=self.__namespace
+                            )
                         else:
                             socketio_queues[self.__id] = None
                             print("unknown message")
@@ -126,9 +147,9 @@ class SocketioSession(threading.Thread):
                 print(self.__id + " socketio connected")
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
-                    json.dumps(
-                        {"id": self.__id, "proxy_type": "sio", "event": "connect"}
-                    ).encode("utf-8"),
+                    json.dumps({"id": self.__id, "proxy_type": "sio", "event": "connect"}).encode(
+                        "utf-8"
+                    ),
                 )
 
             @self.__sio.event(namespace=self.__namespace)
@@ -141,8 +162,10 @@ class SocketioSession(threading.Thread):
                     ).encode("utf-8"),
                 )
 
-            @self.__sio.on('*', namespace=self.__namespace)
+            @self.__sio.on("*", namespace=self.__namespace)
             async def handle_message(event, data):
+                print("Got SIO message from BACKEND: ")
+                print(data)
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
@@ -155,6 +178,7 @@ class SocketioSession(threading.Thread):
                         }
                     ).encode("utf-8"),
                 )
+
             print(self.__id + " connecting to socketio proxy " + str(self.__url))
             await self.__sio.connect(self.__url, namespaces=[self.__namespace])
 
@@ -178,7 +202,7 @@ def main():
     fclient = FormantAgentClient("localhost:5501")
 
     async def callback(message):
-        requestData = json.loads(message.payload)
+        requestData = json.loads(message.payload, object_hook=_decode)
         id = requestData["id"]
         if requestData["proxy_type"] == "ws":
             if requestData["signal"] == "connect":
@@ -193,12 +217,16 @@ def main():
             if requestData["signal"] == "connect":
                 q = queue.Queue()
                 socketio_queues[id] = q
-                SocketioSession(id, fclient, requestData["url"], requestData["namespace"], q).start()
+                SocketioSession(
+                    id, fclient, requestData["url"], requestData["namespace"], q
+                ).start()
             else:
                 q = socketio_queues[id]
                 if q is not None:
                     q.put(requestData)
         if requestData["proxy_type"] == "http":
+            print("Got http request: ")
+            print(requestData)
             if ("requestInit" in requestData) == False or requestData["requestInit"][
                 "method"
             ] == "GET":
@@ -231,7 +259,7 @@ def main():
                 )
             elif requestData["requestInit"]["method"] == "POST":
                 r = requests.post(
-                    requestData["requestInfo"], data=requestData["requestInit"]["body"]
+                    requestData["requestInfo"], json=requestData["requestInit"]["body"]
                 )
                 fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
@@ -246,7 +274,7 @@ def main():
                 )
             elif requestData["requestInit"]["method"] == "PUT":
                 r = requests.put(
-                    requestData["requestInfo"], data=requestData["requestInit"]["body"]
+                    requestData["requestInfo"], json=requestData["requestInit"]["body"]
                 )
                 fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
