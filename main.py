@@ -129,8 +129,8 @@ class SocketioSession(threading.Thread):
                             socketio_queues[self.__id] = None
                             return
                         elif msg["signal"] == "message":
-                            print("Got SIO message: ")
-                            print(msg)
+                            # print("Got SIO message: ")
+                            # print(msg)
                             await self.__sio.emit(
                                 msg["topic"], json.dumps(msg["data"]), namespace=self.__namespace
                             )
@@ -164,8 +164,8 @@ class SocketioSession(threading.Thread):
 
             @self.__sio.on("*", namespace=self.__namespace)
             async def handle_message(event, data):
-                print("Got SIO message from BACKEND: ")
-                print(data)
+                # print("Got SIO message from BACKEND: ")
+                # print(data)
                 self.__fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
@@ -225,8 +225,8 @@ def main():
                 if q is not None:
                     q.put(requestData)
         if requestData["proxy_type"] == "http":
-            print("Got http request: ")
-            print(requestData)
+            # print("Got http request: ")
+            # print(requestData)
             if ("requestInit" in requestData) == False or requestData["requestInit"][
                 "method"
             ] == "GET":
@@ -258,9 +258,15 @@ def main():
                     ).encode("utf-8"),
                 )
             elif requestData["requestInit"]["method"] == "POST":
-                r = requests.post(
-                    requestData["requestInfo"], json=requestData["requestInit"]["body"]
-                )
+                if isinstance(requestData["requestInit"]["body"], str):
+                    # print("using data: " + requestData["requestInit"]["body"])
+                    r = requests.post(
+                        requestData["requestInfo"], data={requestData["requestInit"]["body"]: ""}
+                    )
+                else:
+                    r = requests.post(
+                        requestData["requestInfo"], json=requestData["requestInit"]["body"]
+                    )
                 fclient.send_on_custom_data_channel(
                     CHANNEL_NAME,
                     json.dumps(
