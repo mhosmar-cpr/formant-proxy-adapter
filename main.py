@@ -132,7 +132,7 @@ class SocketioSession(threading.Thread):
                             # print("Got SIO message: ")
                             # print(msg)
                             await self.__sio.emit(
-                                msg["topic"], json.dumps(msg["data"]), namespace=self.__namespace
+                                msg["topic"], json.dumps(msg["data"] if "data" in msg else {}), namespace=self.__namespace
                             )
                         else:
                             socketio_queues[self.__id] = None
