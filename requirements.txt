@@ -1,6 +1,7 @@
 isodate
 formant==1.61.*
-requests
+requests>=2.25.1
+protobuf==3.20.*
 asyncio
 websockets
 sav.channels
